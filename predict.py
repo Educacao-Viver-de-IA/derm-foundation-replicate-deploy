@@ -66,7 +66,6 @@ class Predictor(BasePredictor):
             return {"error": f"No serving_default. Available: {list(self.model.signatures.keys())}"}
 
         try:
-            # Lê signature pra saber input type
             sig_inputs = infer.structured_input_signature[1]
             input_name = list(sig_inputs.keys())[0]
             input_spec = sig_inputs[input_name]
@@ -74,7 +73,13 @@ class Predictor(BasePredictor):
             sys.stdout.flush()
 
             if input_spec.dtype == tf.string:
-                output = infer(**{input_name: tf.constant([img_bytes], dtype=tf.string)})
+                # derm-foundation espera tf.train.Example com feature 'image/encoded' contendo JPEG bytes
+                # Padrão TF Hub pra image models gated
+                example = tf.train.Example(features=tf.train.Features(feature={
+                    'image/encoded': tf.train.Feature(bytes_list=tf.train.BytesList(value=[img_bytes])),
+                }))
+                serialized = example.SerializeToString()
+                output = infer(**{input_name: tf.constant([serialized], dtype=tf.string)})
             else:
                 arr = np.asarray(pil, dtype=np.float32) / 255.0
                 if len(input_spec.shape) == 4 and input_spec.shape[0] is None:
