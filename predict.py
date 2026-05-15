@@ -54,18 +54,25 @@ class Predictor(BasePredictor):
             return {"error": f"Modelo não carregou: {getattr(self, 'setup_error', '?')}"}
 
         t0 = time.time()
+        # Derm Foundation espera bytes JPEG/PNG raw como string tensor
         pil = Image.open(str(image)).convert("RGB").resize((image_size, image_size), Image.BILINEAR)
-        arr = np.asarray(pil, dtype=np.float32) / 255.0
-        arr = np.expand_dims(arr, axis=0)  # [1, H, W, 3]
+        import io as _io
+        buf = _io.BytesIO()
+        pil.save(buf, format="JPEG")
+        img_bytes = buf.getvalue()
 
-        # Derm Foundation usa signature default 'serving_default'
         infer = self.model.signatures.get('serving_default')
         if infer is None:
-            return {"error": f"No serving_default signature found. Available: {list(self.model.signatures.keys())}"}
+            return {"error": f"No serving_default. Available: {list(self.model.signatures.keys())}"}
 
         try:
             input_name = list(infer.structured_input_signature[1].keys())[0]
-            output = infer(**{input_name: tf.constant(arr)})
+            # Tenta string tensor (bytes); se falhar, fallback float
+            try:
+                output = infer(**{input_name: tf.constant([img_bytes], dtype=tf.string)})
+            except Exception:
+                arr = np.asarray(pil, dtype=np.float32) / 255.0
+                output = infer(**{input_name: tf.constant(np.expand_dims(arr, axis=0))})
         except Exception as e:
             return {"error": f"Inference failed: {e}"}
 
