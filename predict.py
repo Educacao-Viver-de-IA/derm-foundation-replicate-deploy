@@ -66,13 +66,20 @@ class Predictor(BasePredictor):
             return {"error": f"No serving_default. Available: {list(self.model.signatures.keys())}"}
 
         try:
-            input_name = list(infer.structured_input_signature[1].keys())[0]
-            # Tenta string tensor (bytes); se falhar, fallback float
-            try:
+            # Lê signature pra saber input type
+            sig_inputs = infer.structured_input_signature[1]
+            input_name = list(sig_inputs.keys())[0]
+            input_spec = sig_inputs[input_name]
+            print(f"[predict] input: name={input_name} dtype={input_spec.dtype} shape={input_spec.shape}", flush=True)
+            sys.stdout.flush()
+
+            if input_spec.dtype == tf.string:
                 output = infer(**{input_name: tf.constant([img_bytes], dtype=tf.string)})
-            except Exception:
+            else:
                 arr = np.asarray(pil, dtype=np.float32) / 255.0
-                output = infer(**{input_name: tf.constant(np.expand_dims(arr, axis=0))})
+                if len(input_spec.shape) == 4 and input_spec.shape[0] is None:
+                    arr = np.expand_dims(arr, axis=0)
+                output = infer(**{input_name: tf.constant(arr)})
         except Exception as e:
             return {"error": f"Inference failed: {e}"}
 
